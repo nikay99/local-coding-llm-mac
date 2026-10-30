@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Local Coding LLMs on a 32 GB Mac</title>
+<meta name="description" content="Field report: which local model, inference backend and coding agent work best on a 32 GB Apple Silicon Mac, tested on custom tasks and real open-source bug fixes.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one reading column, lab-notebook feel; wide tables scroll inside their own containers */
+:root {
+  --bg: #f6f7f5; --surface: #ffffff; --fg: #1d2421; --muted: #5d6a64; --line: #d9dfdb;
+  --accent: #1f6f5c; --accent-soft: #e2efe9;
+  --pass: #1f7a4d; --pass-bg: #e3f3ea; --fail: #b3412e; --fail-bg: #f8e6e2; --mid: #9a6a12; --mid-bg: #f6edd9; --na: #8a948f;
+  --display: "Fraunces", Georgia, serif; --body: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root {
+  --bg: #131816; --surface: #1a201d; --fg: #e4ebe7; --muted: #9aa7a0; --line: #2c3530;
+  --accent: #6cc3a6; --accent-soft: #1e2e28;
+  --pass: #7fd4a5; --pass-bg: #1c3127; --fail: #f09a88; --fail-bg: #3a221d; --mid: #e3bd6c; --mid-bg: #352c19; --na: #6d7872; color-scheme: dark } }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 16px; line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 48px 80px; }
+main { max-width: 880px; margin: 0 auto; display: grid; gap: 48px; }
+h1, h2 { font-family: var(--display); font-weight: 650; text-wrap: balance; line-height: 1.2; margin: 0; }
+h1 { font-size: clamp(32px, 5.5vw, 46px); }
+h2 { font-size: 26px; }
+h3 { margin: 0; font-size: 17px; font-weight: 600; }
+p, ul, ol { margin: 0; max-width: 70ch; }
+section { display: grid; gap: 14px; min-width: 0; }
+a { color: var(--accent); }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.lede { font-size: 18px; }
+.meta { color: var(--muted); font-size: 14px; }
+.verdict { background: var(--accent-soft); border-left: 4px solid var(--accent); padding: 18px 20px; display: grid; gap: 10px; }
+.verdict strong { font-family: var(--display); font-size: 21px; font-weight: 650; }
+.figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.fig { background: var(--surface); border: 1px solid var(--line); padding: 14px 16px; display: grid; gap: 2px; }
+.fig b { font-family: var(--mono); font-size: 24px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.fig span { color: var(--muted); font-size: 13.5px; }
+.scroll { overflow-x: auto; border: 1px solid var(--line); background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; font-variant-numeric: tabular-nums; }
+th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td.wrap { white-space: normal; min-width: 240px; }
+th { font-weight: 600; color: var(--muted); font-size: 12.5px; text-transform: uppercase; letter-spacing: .04em; }
+td.c, th.c { text-align: center; padding: 6px 4px; }
+td.num { font-family: var(--mono); text-align: right; }
+tr.best td { background: var(--accent-soft); }
+.m { display: inline-block; width: 22px; height: 22px; line-height: 22px; text-align: center; font-family: var(--mono); font-size: 12px; font-style: normal; }
+.m.p { background: var(--pass-bg); color: var(--pass); } .m.f { background: var(--fail-bg); color: var(--fail); }
+.m.t { background: var(--mid-bg); color: var(--mid); } .m.n { color: var(--na); }
+code { font-family: var(--mono); font-size: .9em; background: var(--accent-soft); padding: 1px 5px; }
+pre { font-family: var(--mono); font-size: 13px; background: var(--surface); border: 1px solid var(--line); padding: 14px 16px; overflow-x: auto; margin: 0; }
+ul, ol { padding-left: 22px; display: grid; gap: 6px; }
+nav { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 14px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; }
+.card { background: var(--surface); border: 1px solid var(--line); padding: 16px; display: grid; gap: 8px; align-content: start; min-width: 0; }
+footer { color: var(--muted); font-size: 13.5px; display: grid; gap: 6px; border-top: 1px solid var(--line); padding-top: 20px; }
+</style>
+</head>
+<body>
+<main>
+
+<header style="display:grid;gap:14px">
+  <div class="eyebrow">Field report · Apple Silicon, 32 GB unified memory · October 2026</div>
+  <h1>Local Coding LLMs on a 32 GB Mac</h1>
+  <p class="lede">Which local model, inference backend and coding agent actually get work done on a 32 GB Mac? We ran three test series overnight: 7 models on 12 coding tasks, 9 coding agents on the same model, and finally 8 real bug fixes from popular open-source libraries.</p>
+  <p class="meta">Setup: Mac mini with Apple Silicon and 32 GB unified memory, LM Studio as the only inference server, every task in a fresh git repo, judged only by hidden tests the agent never sees. Each agent run had a 10-minute limit per task.</p>
+  <nav><a href="#tldr">TL;DR</a><a href="#models">Models</a><a href="#tuning">Tuning</a><a href="#agents">Coding agents</a><a href="#real">Real bug fixes</a><a href="#workflow">Workflow</a><a href="#setup">Setup</a><a href="#limits">Limits</a></nav>
+</header>
+
+<section id="tldr">
+  <h2>TL;DR</h2>
+  <div class="verdict">
+    <strong>Qwen3.6-35B-A3B (4-bit) on LM Studio's Splash backend, driven by OpenCode, with a short brief and an acceptance test</strong>
+    <ul>
+      <li><b>Model:</b> Qwen3.6-35B-A3B was the best model that runs stably on 32 GB. Dense 24–28B models and models with classic attention ran out of memory or were far too slow.</li>
+      <li><b>Backend:</b> LM Studio's Splash runtime (speculative decoding with a built-in draft model) generated 170 tok/s instead of 68 tok/s with MLX, with the same weights and the same quality.</li>
+      <li><b>Agent:</b> OpenCode and pi tied on targeted tasks; on real open-source code OpenCode was clearly more reliable.</li>
+      <li><b>Workflow:</b> With only the issue text, the local model fixed about half of 8 real bugs. With a short brief plus an acceptance test written by a stronger model, it fixed all 8.</li>
+    </ul>
+  </div>
+  <div class="figures">
+    <div class="fig"><b>170 tok/s</b><span>Qwen3.6 on Splash (MLX: 68)</span></div>
+    <div class="fig"><b>7.5 / 12</b><span>average over 11 runs, custom tasks</span></div>
+    <div class="fig"><b>10 / 12</b><span>OpenCode and pi on agent-specific tasks</span></div>
+    <div class="fig"><b>8 / 8</b><span>real bug fixes with brief + acceptance test</span></div>
+  </div>
+</section>
+
+<section id="models">
+  <h2>1 · Which model fits on 32 GB?</h2>
+  <p>Twelve tasks with hidden tests: bug hunts from a README spec, implementing from spec, refactoring, a CLI feature that has to follow existing patterns, debugging from a production stack trace, a performance rewrite, and two honesty tasks where a referenced function or config key does not exist. Half the tasks are JavaScript, half Python. Everything ran through OpenCode against LM Studio with 65k context.</p>
+  <div class="scroll"><table>
+    <tr><th>Model (4-bit)</th><th class="num">tok/s</th><th>Score</th><th class="num">Time for 12</th><th>Verdict</th></tr>
+    <tr class="best"><td><b>Qwen3.6-35B-A3B · Splash</b></td><td class="num">170</td><td>6–9 / 12 (avg 7.5, 11 runs)</td><td class="num">15–25 min</td><td>winner</td></tr>
+    <tr><td>Qwen3.6-35B-A3B · MLX</td><td class="num">68</td><td>8 / 12</td><td class="num">31 min</td><td>same quality, 2.5× slower decode</td></tr>
+    <tr><td>Nemotron 3.5 Lightning 30B-A3B</td><td class="num">63</td><td>7 / 12</td><td class="num">72 min</td><td>good debugger, thinks very long, invents files</td></tr>
+    <tr><td>Gemma 4 26B-A4B</td><td class="num">52</td><td>5 / 12</td><td class="num">39 min</td><td>many requests per task, timeouts</td></tr>
+    <tr><td>GLM-4.7-Flash 30B-A3B</td><td class="num">54</td><td>0 / 4 (aborted)</td><td class="num">–</td><td>memory at the limit, crawled</td></tr>
+    <tr><td>Qwen3-Coder 30B-A3B</td><td class="num">67</td><td>out of memory</td><td class="num">–</td><td>GPU OOM even at 32k context</td></tr>
+    <tr><td>Devstral Small 2 24B (dense)</td><td class="num">–</td><td>not run</td><td class="num">–</td><td>KV cache would need ~25 GB at 65k</td></tr>
+    <tr><td>A 28B dense GGUF model</td><td class="num">9</td><td>0 / 2 (aborted)</td><td class="num">–</td><td>too slow for agent work</td></tr>
+  </table></div>
+  <ul>
+    <li><b>On 32 GB, memory beats benchmarks.</b> An agent like OpenCode sends about 10k tokens before the first tool call and quickly reaches 30–60k. Models with classic attention grow their KV cache by several GB over that range and hit the GPU memory limit. Qwen3.6 uses hybrid attention with a tiny cache, so it fits despite 20 GB of weights.</li>
+    <li><b>Single runs are noisy.</b> The same model and settings scored anywhere from 6 to 9 of 12. Do not trust a single run that differs by one or two tasks.</li>
+    <li><b>Splash is the free win.</b> Same weights, same answers, 2.5× faster decode. Per task the speedup is smaller (about 1.3×) because tool calls, tests and prompt processing take fixed time.</li>
+  </ul>
+</section>
+
+<section id="tuning">
+  <h2>2 · Tuning prompts, sampling and max tokens</h2>
+  <div class="scroll"><table>
+    <tr><th>Variant (Qwen3.6 Splash, OpenCode)</th><th>Runs</th><th>Score</th><th>Honesty task</th><th>Verdict</th></tr>
+    <tr><td>Default (max_tokens 16k, server default sampling)</td><td>8, 7</td><td>7.5</td><td>0 / 2</td><td>baseline</td></tr>
+    <tr class="best"><td>Short working-rules prompt</td><td>9, 6, 8</td><td>7.7</td><td><b>3 / 3</b></td><td>use it</td></tr>
+    <tr><td>max_tokens 32k</td><td>9, 7</td><td>8</td><td>0 / 2</td><td>neutral</td></tr>
+    <tr><td>max_tokens 4k</td><td>7</td><td>7</td><td>0 / 1</td><td>too small</td></tr>
+    <tr><td>Official sampling (T 1.0, top_p 0.95, top_k 20)</td><td>7</td><td>7</td><td>0 / 1</td><td>neutral</td></tr>
+    <tr><td>Long checklist prompt</td><td>7</td><td>7</td><td>0 / 1</td><td>neutral</td></tr>
+  </table></div>
+  <ul>
+    <li><b>The short rules prompt fixed honesty.</b> Without it, the model invented a missing helper function in 8 of 8 runs; with it, it stopped and reported the gap in 3 of 3. The rules: read the spec and all relevant files first, change only what is needed, never invent missing things (stop and report <code>MISSING:</code>), verify every requirement with tests at the end.</li>
+    <li><b>4k max tokens is a trap.</b> The model spends the whole budget thinking and returns an empty answer. 16k is fine, 32k does no harm.</li>
+    <li><b>OpenCode sends no temperature at all</b> for OpenAI-compatible providers, so the server defaults apply. Setting the officially recommended sampling made no measurable difference.</li>
+  </ul>
+</section>
+
+<section id="agents">
+  <h2>3 · Same model, nine coding agents</h2>
+  <p>Eight tasks built to expose differences between agents: a one-function edit in a 2,100-line file, preserving tabs and CRLF line endings, renaming a feature flag across 314 files (including JSON, YAML and a concatenated string), <code>npm test</code> hanging in watch mode, project rules that exist only in <code>AGENTS.md</code>, a registry built from 40 plugin files, a test loop against 26 visible tests, and cleaning a git-ignored <code>build/</code> folder without touching <code>data/</code> or <code>.env</code>. Plus four general tasks.</p>
+  <div class="scroll"><table>
+    <tr><th>Agent</th><th>Score</th><th class="num">Time</th><th class="wrap">Main weakness</th></tr>
+    <tr class="best"><td><b>OpenCode</b></td><td>10 / 12</td><td class="num">20 min</td><td class="wrap">about 60% slower than pi on these tasks</td></tr>
+    <tr class="best"><td><b>pi</b> (engine of JetBrains ThinkRail)</td><td>10 / 12</td><td class="num">12 min</td><td class="wrap">no permission system of its own; see real bug fixes below</td></tr>
+    <tr><td>Qwen Code</td><td>8 / 12</td><td class="num">18 min</td><td class="wrap">file tools hide git-ignored files; ignored AGENTS.md</td></tr>
+    <tr><td>Claude Code (pointed at the local model)</td><td>8 / 12</td><td class="num">15 min</td><td class="wrap">reads CLAUDE.md, not AGENTS.md</td></tr>
+    <tr><td>Codex CLI</td><td>8 / 12</td><td class="num">16 min</td><td class="wrap">missed the concatenated string; edited outside the target function</td></tr>
+    <tr><td>Crush</td><td>4 / 5*</td><td class="num">3 min</td><td class="wrap">followed only 2 of 3 AGENTS.md rules</td></tr>
+    <tr><td>mini-swe-agent</td><td>3 / 5*</td><td class="num">4 min</td><td class="wrap">wandered into another directory without a fixed cwd; no project rules</td></tr>
+    <tr><td>Goose</td><td>2 / 5*</td><td class="num">2 min</td><td class="wrap">imprecise edits, ignored AGENTS.md and git-ignored files</td></tr>
+    <tr><td>Aider</td><td>1 / 6*</td><td class="num">9 min</td><td class="wrap">headless it cannot run shell commands, so it never tests</td></tr>
+  </table></div>
+  <p class="meta">* quick run on the five most discriminating tasks. Every agent ran once with an isolated, empty config directory. Claude Code works locally because LM Studio also serves an Anthropic-compatible <code>/v1/messages</code> endpoint; Codex used LM Studio's Responses endpoint.</p>
+  <div class="cards">
+    <div class="card"><h3>Reads AGENTS.md</h3><p>OpenCode, pi, Codex (and Crush partly). Claude Code and Qwen Code need their own <code>CLAUDE.md</code> / <code>QWEN.md</code>.</p></div>
+    <div class="card"><h3>Hides git-ignored files</h3><p>Qwen Code and Goose. Careful with tasks around build folders, logs or <code>.env</code>.</p></div>
+    <div class="card"><h3>Headless pitfall</h3><p>OpenCode auto-rejects the permission prompt for paths outside the project and ends the whole run. Setting <code>"permission": {"external_directory": "deny"}</code> returns an error to the model instead, and the run continues.</p></div>
+  </div>
+</section>
+
+<section id="real">
+  <h2>4 · Real bug fixes from open-source history</h2>
+  <p>SWE-bench style: eight real, merged fixes and small features from yargs-parser, qs, humanize, python-tabulate and python-dotenv. The repo is reset to the commit before the fix, the task is a paraphrase of the real issue, and grading uses the tests the maintainers added with the fix. Five of the eight fixes are from 2026, so the model cannot know them from training. All agent runs and all foreign test code ran inside a macOS sandbox (writes only inside the test folder, network only to the local model server).</p>
+  <div class="scroll"><table>
+    <tr><th>How the local model was used</th><th class="c">R1</th><th class="c">R2</th><th class="c">R3</th><th class="c">R4</th><th class="c">R5</th><th class="c">R6</th><th class="c">R7</th><th class="c">R8</th><th>Score</th></tr>
+    <tr><td>Issue text only · OpenCode**</td><td class="c"><i class="m f">✗</i></td><td class="c"><i class="m p">✓</i></td><td class="c"><i class="m f">✗</i></td><td class="c"><i class="m f">✗</i></td><td class="c"><i class="m p">✓</i></td><td class="c"><i class="m p">✓</i></td><td class="c"><i class="m p">✓</i></td><td class="c"><i class="m f">✗</i></td><td>≈ 4 / 8</td></tr>
+    <tr><td>Issue text only · pi</td><td class="c"><i class="m f">✗</i></td><td class="c"><i class="m f">✗</i></td><td class="c"><i class="m f">✗</i></td><td class="c"><i class="m f">✗</i></td><td class="c"><i class="m n">–</i></td><td class="c"><i class="m n">–</i></td><td class="c"><i class="m n">–</i></td><td class="c"><i class="m n">–</i></td><td>0 / 4</td></tr>
+    <tr><td>Brief + acceptance test · pi</td><td class="c"><i class="m f">✗</i></td><td class="c"><i class="m f">✗</i></td><td class="c"><i class="m p">✓</i></td><td class="c"><i class="m p">✓</i></td><td class="c"><i class="m p">✓</i></td><td class="c"><i class="m p">✓</i></td><td class="c"><i class="m p">✓</i></td><td class="c"><i class="m p">✓</i></td><td>6 / 8 · 25 min</td></tr>
+    <tr class="best"><td><b>Brief + acceptance test · OpenCode</b></td><td class="c"><i class="m p">✓</i></td><td class="c"><i class="m p">✓</i></td><td class="c"><i class="m p">✓</i></td><td class="c"><i class="m p">✓</i></td><td class="c"><i class="m p">✓</i></td><td class="c"><i class="m p">✓</i></td><td class="c"><i class="m p">✓</i></td><td class="c"><i class="m p">✓</i></td><td><b>8 / 8</b> · 34 min</td></tr>
+  </table></div>
+  <p class="meta">** In this run OpenCode's search tool was broken by the sandbox (it tried to download ripgrep at first start), so this is a lower bound. The brief + test runs were repeated after the fix. R1 negative decimals in yargs-parser · R2 unpaired UTF-16 surrogates in qs (cause in a different file) · R3 new WHATWG output format in qs · R4 time-zone handling in humanize · R5 infinite loop with wide CJK characters in tabulate · R6 CRLF handling in python-dotenv · R7 opt-out env variable in python-dotenv · R8 alias plus dot-notation in yargs-parser.</p>
+  <ul>
+    <li><b>The acceptance test is what makes the difference.</b> A brief without a test did not help measurably. With a test, every success came on the first attempt.</li>
+    <li><b>The test has to cover every edge case of the issue.</b> Once the acceptance test passed but a maintainer test with an extra edge case still failed. What the test does not check, nobody checks.</li>
+    <li><b>Context is tight at 65k.</b> Reading a 2,700-line file plus three test files overflowed it. Name the line range in the brief.</li>
+    <li><b>Avoid absolute paths outside the repo in prompts.</b> The model went looking for the code there.</li>
+  </ul>
+</section>
+
+<section id="workflow">
+  <h2>The workflow that works</h2>
+  <ol>
+    <li>A stronger model (or you) reads only the relevant code and writes a 3–5 sentence brief: file, function, root cause, approach.</li>
+    <li>It writes an acceptance test from the examples and edge cases in the issue and checks that it fails on the current code.</li>
+    <li>The local agent works in an isolated git worktree until the test passes. If the test is still red, it gets the test output and one more attempt.</li>
+    <li>Only the test result and the diff are reviewed before merging.</li>
+  </ol>
+  <p>In our runs this cost the stronger model roughly 3,000 tokens per task, while all exploration, editing and test runs (15 to 90 model requests per task) stayed on the local machine. That is an estimate, not a precise measurement.</p>
+  <pre>Example brief (qs, unpaired surrogates):
+Cause in lib/utils.js, function encode, surrogate branch at the end of the loop:
+it assumes c is a high surrogate and the next char a low surrogate, but never
+checks. Check both; if it is not a valid pair, emit %EF%BF%BD and do not
+consume the next character.</pre>
+</section>
+
+<section id="setup">
+  <h2>Setup that worked</h2>
+  <ul>
+    <li><b>LM Studio</b> with the Splash runtime enabled (Settings → Runtime) and the Splash build of Qwen3.6-35B-A3B. Context 65,536, parallel 1. If the in-app download stalls, finishing it with the Hugging Face CLI and re-running <code>lms get</code> registered the model.</li>
+    <li><b>OpenCode</b> with an OpenAI-compatible provider pointing at <code>http://127.0.0.1:1234/v1</code>, output limit 16k, and <code>"permission": {"external_directory": "deny"}</code> for headless runs.</li>
+    <li><b>pi</b> reads providers from <code>~/.pi/agent/models.json</code>. It has no permission prompts, so run it in a sandbox. In scripts, give it an empty stdin or it waits for input.</li>
+    <li><b>Sandbox on macOS:</b> <code>sandbox-exec</code> with a profile that denies all file writes except the project, temp and cache folders, and denies network except to localhost, was enough to run agents and foreign test code safely.</li>
+  </ul>
+  <pre>(version 1)(allow default)(deny file-write*)
+(allow file-write* (subpath "/path/to/project") (subpath "/private/tmp")
+                   (subpath "/private/var/folders") (subpath "/dev"))
+(deny network*)(allow network* (local unix))
+(allow network* (remote ip "localhost:*"))</pre>
+</section>
+
+<section id="limits">
+  <h2>Limits</h2>
+  <ul>
+    <li>One machine, one night of runs, mostly one run per configuration. Differences of one or two tasks are noise.</li>
+    <li>Most tasks were written for this test; only the last series uses real open-source history, and it has just eight tasks.</li>
+    <li>Splash is new (we used runtime 1.3.0) and officially recommends 36 GB of memory. It ran stably for many hours at 65k context on 32 GB.</li>
+    <li>Agents ran headless with default settings. Interactive use, other modes or newer versions may behave differently.</li>
+  </ul>
+</section>
+
+<footer>
+  <div>Tested software: LM Studio with Splash runtime 1.3.0 · OpenCode · pi 1.4 · Qwen Code 0.26 · Claude Code · Codex CLI 0.166 · Crush 0.99 · Goose 1.57 · Aider 0.86 · mini-swe-agent 2.4.</div>
+  <div>Real tasks from: yargs/yargs-parser, ljharb/qs, python-humanize/humanize, astanin/python-tabulate, theskumar/python-dotenv. Thanks to their maintainers.</div>
+  <div>Tests designed and run with the help of Claude (Anthropic). Numbers are measurements from these runs, not vendor benchmarks.</div>
+</footer>
+</main>
+</body>
+</html>
